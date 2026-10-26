@@ -1206,7 +1206,9 @@ async def compare_prices(
             else (f"up to {max_price_rub:g} ₽" if max_price_rub is not None else f"from {min_price_rub:g} ₽")
         )
         if out_of_budget:
-            warnings.append(f"price_filter: dropped {out_of_budget} offer(s) outside the budget ({span}) or without a rouble price")
+            warnings.append(
+                f"price_filter: dropped {out_of_budget} offer(s) outside the budget ({span}) or without a rouble price"
+            )
         if not offers:
             warnings.append(f"price_filter: nothing in the budget ({span}) — try a broader query or a wider budget")
     if not priced:
