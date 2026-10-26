@@ -1026,6 +1026,14 @@ async def compare_prices(
         bool,
         Field(default=False, description="Rank only offers whose marketplace explicitly reports them in stock."),
     ] = False,
+    max_price_rub: Annotated[
+        float | None,
+        Field(default=None, gt=0, description="Budget ceiling in roubles: drop offers priced above it."),
+    ] = None,
+    min_price_rub: Annotated[
+        float | None,
+        Field(default=None, ge=0, description="Price floor in roubles: drop offers priced below it."),
+    ] = None,
     ctx: Context | None = None,
 ) -> CompareResponse:
     """Price one product across every configured Russian marketplace at once.
@@ -1051,6 +1059,10 @@ async def compare_prices(
 
     Titles are matched loosely: marketplaces name things differently, so scan the
     results rather than assuming every row is the identical model.
+
+    When the person names a budget ("до 20 000 ₽", "around 10k"), pass it as
+    max_price_rub (and min_price_rub for "from") rather than putting the price in
+    query; offers outside the range, or without a rouble price, are dropped.
 
     ## Return Format
 
@@ -1100,14 +1112,43 @@ async def compare_prices(
             )
         )
 
-    log_event("compare_prices.start", query=text, sources=active, limit=per_source_limit, in_stock_only=in_stock_only)
+    log_event(
+        "compare_prices.start",
+        query=text,
+        sources=active,
+        limit=per_source_limit,
+        in_stock_only=in_stock_only,
+        max_price_rub=max_price_rub,
+        min_price_rub=min_price_rub,
+    )
     if ctx is not None:
         await ctx.info(f"compare_prices: {text!r} across {', '.join(active)}")
 
-    results = await asyncio.gather(*(_run_source(name, text, per_source_limit) for name in active))
+    price_filtered = max_price_rub is not None or min_price_rub is not None
+    if price_filtered and min_price_rub is not None and max_price_rub is not None and min_price_rub > max_price_rub:
+        raise_tool_error(BadRequestError("min_price_rub must not exceed max_price_rub"))
+    # A budget throws away rows, so ask each marketplace for more and trim afterwards.
+    fetch_limit = min(20, per_source_limit * 4) if price_filtered else per_source_limit
+    results = await asyncio.gather(*(_run_source(name, text, fetch_limit) for name in active))
 
     outcomes = [outcome for outcome, _ in results]
     offers: list[MarketOffer] = _dedupe(offer for _, source_offers in results for offer in source_offers)
+    out_of_budget = 0
+    if price_filtered:
+        low = min_price_rub if min_price_rub is not None else 0.0
+        high = max_price_rub if max_price_rub is not None else math.inf
+        kept: list[MarketOffer] = []
+        per_source: dict[str, int] = {}
+        for offer in offers:
+            price = offer.price_rub if _ranks_in_rubles(offer) else None
+            if price is None or not low <= price <= high:
+                out_of_budget += 1
+                continue
+            if per_source.get(offer.source, 0) >= per_source_limit:
+                continue
+            per_source[offer.source] = per_source.get(offer.source, 0) + 1
+            kept.append(offer)
+        offers = kept
 
     for name in missing:
         outcomes.append(
@@ -1158,6 +1199,16 @@ async def compare_prices(
             f"partial: {len(failed_sources)} of {len(outcomes)} marketplaces did not answer "
             f"({', '.join(failed_sources)}) — prices below cover only {', '.join(ok_sources) or 'none'}"
         )
+    if price_filtered:
+        span = (
+            f"{min_price_rub:g}–{max_price_rub:g} ₽"
+            if min_price_rub is not None and max_price_rub is not None
+            else (f"up to {max_price_rub:g} ₽" if max_price_rub is not None else f"from {min_price_rub:g} ₽")
+        )
+        if out_of_budget:
+            warnings.append(f"price_filter: dropped {out_of_budget} offer(s) outside the budget ({span}) or without a rouble price")
+        if not offers:
+            warnings.append(f"price_filter: nothing in the budget ({span}) — try a broader query or a wider budget")
     if not priced:
         warnings.append("no_prices: no marketplace returned a usable price for this query")
     if in_stock_only:

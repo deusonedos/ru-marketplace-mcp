@@ -30,7 +30,10 @@
     --accent: #f2f1ec;
     --accent-text: #1a1a1a;
   }
-  * { box-sizing: border-box; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  button { touch-action: manipulation; }
+  button:active { opacity: .82; }
+  .card:active { transform: scale(.99); }
   html, body { margin: 0; background: transparent; }
   body { font-family: var(--font); color: var(--text); font-size: 14px; }
   .wrap { background: var(--bg); border: 1px solid var(--border); border-radius: 16px; padding: 16px 16px 12px; display: flex; flex-direction: column; gap: 14px; }
@@ -106,7 +109,14 @@
     taobao: "Taobao", megamarket: "Мегамаркет", lamoda: "Lamoda", dns: "DNS", citilink: "Ситилинк",
     aliexpress: "AliExpress", detsky_mir: "Детский мир"
   };
-  var state = { data: null, query: "", source: "all", sort: "reviews", detail: null };
+  var state = { data: null, query: "", source: "all", sort: "reviews", detail: null, budget: null };
+  function budgetText(b) {
+    if (!b) return "";
+    if (b.min != null && b.max != null) return fmtRub(b.min) + " – " + fmtRub(b.max);
+    if (b.max != null) return "до " + fmtRub(b.max);
+    if (b.min != null) return "от " + fmtRub(b.min);
+    return "";
+  }
   if (!window.ExtApps || !window.ExtApps.App) { document.getElementById("heading").textContent = "Не удалось загрузить карточки"; return; }
   var app = new window.ExtApps.App({ name: "marketplace-cards", version: "1.1.0" }, { availableDisplayModes: ["inline"] }, { autoResize: true });
 
@@ -192,6 +202,7 @@
     var head = el("div", "head");
     var title = el("div", "title");
     title.appendChild(el("h1", null, state.query ? "«" + state.query + "»" : "Товары"));
+    if (budgetText(state.budget)) title.appendChild(el("span", "chip", budgetText(state.budget)));
     okSources.forEach(function (s) { title.appendChild(el("span", "chip", SOURCE_NAMES[s] || s)); });
     if (failed.length) {
       title.appendChild(el("span", "chip", "Не ответили: " + failed.map(function (s) { return SOURCE_NAMES[s] || s; }).join(", ")));
@@ -229,7 +240,7 @@
 
     var rail = el("div", "rail");
     if (!list.length) {
-      rail.appendChild(el("div", "empty", d ? "Ничего не нашлось — площадки не ответили или товаров нет." : "Загружаю…"));
+      rail.appendChild(el("div", "empty", d ? (state.budget ? "В этот бюджет ничего не нашлось — попробуйте шире запрос или бюджет." : "Ничего не нашлось — площадки не ответили или товаров нет.") : "Загружаю…"));
     }
     list.forEach(function (o) {
       var card = el("div", "card");
@@ -435,6 +446,9 @@
 
   app.ontoolinput = function (params) {
     var args = params && params.arguments;
+    if (args && (args.max_price_rub != null || args.min_price_rub != null)) {
+      state.budget = { max: args.max_price_rub != null ? Number(args.max_price_rub) : null, min: args.min_price_rub != null ? Number(args.min_price_rub) : null };
+    }
     if (args && args.query) {
       state.query = String(args.query);
       var h = document.getElementById("heading");

@@ -470,6 +470,30 @@
           "default": false,
           "type": "boolean"
         },
+        "max_price_rub": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "min_price_rub": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "per_source_limit": {
           "default": 5,
           "maximum": 20,
