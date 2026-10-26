@@ -1399,6 +1399,92 @@ async def compare_verify_offer(
 
 
 @mcp.tool(
+    name="compare_ui_log",
+    app=AppConfig(visibility=["app"]),
+    annotations=ToolAnnotations(title="Cards view diagnostics", readOnlyHint=True),
+)
+async def compare_ui_log(
+    stage: Annotated[str, Field(max_length=40, description="Lifecycle stage of the cards view.")],
+    detail: Annotated[str, Field(default="", max_length=200, description="Short detail.")] = "",
+) -> dict[str, bool]:
+    """Called by the cards view only, to report its own lifecycle. Not for the model.
+
+    ## Return Format
+
+    Plain object: {ok}.
+
+    ## Error Format
+
+    Never raises: the event is only kept in memory for compare_sources notes.
+    """
+    _UI_DEBUG.append(
+        {"t": datetime.datetime.now(datetime.UTC).strftime("%H:%M:%S"), "view": stage[:40], "d": detail[:200]}
+    )
+    return {"ok": True}
+
+
+@mcp.tool(
+    name="compare_product_details",
+    app=AppConfig(visibility=["app"]),
+    annotations=ToolAnnotations(title="Product details for the cards view", readOnlyHint=True, openWorldHint=True),
+)
+async def compare_product_details(
+    source: Annotated[str, Field(max_length=32, description="Marketplace of the offer, e.g. yandex_market.")],
+    product_id: Annotated[str, Field(min_length=1, max_length=32, description="Marketplace product id.")],
+) -> dict[str, Any]:
+    """Called by the cards view only: one product's photo, description, rating breakdown and top reviews.
+
+    ## Return Format
+
+    Plain object: {supported, source, product_id, title, brand, seller, description,
+    image, price_rub, price_with_plus, price_before_discount_rub, discount_percent,
+    offers_count, rating, rating_count, review_count, rating_stars, reviews, url}.
+    Sources other than yandex_market return {supported: false, source}.
+
+    ## Error Format
+
+    On transport failure raises ToolError with a JSON message describing the
+    error code and whether it is retryable.
+    """
+    if source != "yandex_market" or "yandex_market" not in SOURCES:
+        return {"supported": False, "source": source}
+    card = await SOURCES["yandex_market"].yandex_card(product_id=product_id, include_reviews=True)
+    reviews = []
+    for review in (getattr(card, "reviews", None) or [])[:5]:
+        reviews.append(
+            {
+                "author": review.author,
+                "rating": review.rating,
+                "date": review.date,
+                "pros": review.pros[:400],
+                "cons": review.cons[:400],
+                "comment": review.comment[:600],
+            }
+        )
+    return {
+        "supported": True,
+        "source": source,
+        "product_id": card.product_id,
+        "title": card.title,
+        "brand": card.brand,
+        "seller": card.seller,
+        "description": card.description[:1500],
+        "image": card.image,
+        "price_rub": card.price_rub,
+        "price_with_plus": card.price_with_plus,
+        "price_before_discount_rub": card.price_before_discount_rub,
+        "discount_percent": card.discount_percent,
+        "offers_count": card.offers_count,
+        "rating": card.rating,
+        "rating_count": card.rating_count,
+        "review_count": card.review_count,
+        "rating_stars": {str(k): v for k, v in (card.rating_stars or {}).items()},
+        "reviews": reviews,
+        "url": card.url,
+    }
+
+
+@mcp.tool(
     name="compare_sources",
     annotations=ToolAnnotations(
         title="List Available Marketplaces",

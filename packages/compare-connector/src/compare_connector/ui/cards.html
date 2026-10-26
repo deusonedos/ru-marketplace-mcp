@@ -62,6 +62,30 @@
   .foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px; font-size: 12px; color: var(--muted); }
   .empty { color: var(--muted); padding: 24px 4px; text-align: center; }
   .skel { flex: 0 0 216px; height: 300px; border-radius: 12px; background: var(--bg-soft); animation: pulse 1.2s ease-in-out infinite; }
+  .open.ghost { background: transparent; color: var(--text); border: 1px solid var(--border); margin-top: 0; }
+  .card { cursor: pointer; }
+  .detail { display: flex; flex-direction: column; gap: 14px; }
+  .back { align-self: flex-start; height: 34px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font: 500 13px var(--font); cursor: pointer; }
+  .dtop { display: flex; flex-wrap: wrap; gap: 18px; }
+  .dpic { flex: 0 0 260px; max-width: 100%; height: 260px; border-radius: 12px; background: #ffffff; border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  .dpic img { width: 100%; height: 100%; object-fit: contain; }
+  .dinfo { flex: 1 1 280px; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+  .dinfo h2 { margin: 0; font-size: 18px; line-height: 1.3; }
+  .dprice { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .dprice .now { font-size: 26px; font-weight: 700; }
+  .dprice .old { color: var(--muted); text-decoration: line-through; }
+  .dprice .off { font-size: 12px; font-weight: 600; color: #1e5b2a; background: #e9f3ea; border-radius: 999px; padding: 3px 8px; }
+  .meta { color: var(--muted); font-size: 13px; }
+  .bars { display: flex; flex-direction: column; gap: 4px; max-width: 320px; }
+  .bar { display: grid; grid-template-columns: 22px 1fr 44px; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+  .bar .track { height: 6px; border-radius: 6px; background: var(--chip); overflow: hidden; }
+  .bar .fill { height: 100%; background: var(--star); }
+  .desc { font-size: 13.5px; line-height: 1.5; white-space: pre-line; }
+  .sec { font-size: 15px; font-weight: 600; margin: 4px 0 0; }
+  .reviews { display: flex; flex-direction: column; gap: 10px; }
+  .rev { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; font-size: 13px; line-height: 1.45; display: flex; flex-direction: column; gap: 4px; }
+  .rev .who { color: var(--muted); font-size: 12px; }
+  .buy { height: 44px; border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-text); font: 600 14px var(--font); cursor: pointer; padding: 0 18px; align-self: flex-start; }
   @keyframes pulse { 50% { opacity: .55; } }
   @media (prefers-reduced-motion: reduce) { .skel { animation: none; } }
 </style>
@@ -82,8 +106,18 @@
     taobao: "Taobao", megamarket: "Мегамаркет", lamoda: "Lamoda", dns: "DNS", citilink: "Ситилинк",
     aliexpress: "AliExpress", detsky_mir: "Детский мир"
   };
-  var state = { data: null, query: "", source: "all", sort: "reviews" };
+  var state = { data: null, query: "", source: "all", sort: "reviews", detail: null };
+  if (!window.ExtApps || !window.ExtApps.App) { document.getElementById("heading").textContent = "Не удалось загрузить карточки"; return; }
   var app = new window.ExtApps.App({ name: "marketplace-cards", version: "1.1.0" }, { availableDisplayModes: ["inline"] }, { autoResize: true });
+
+  var connected = false;
+  function log(stage, detail) {
+    if (!connected) return;
+    try {
+      app.callServerTool({ name: "compare_ui_log", arguments: { stage: String(stage).slice(0, 40), detail: String(detail || "").slice(0, 200) } }).catch(function () {});
+    } catch (e) {}
+  }
+  window.addEventListener("error", function (e) { log("error", (e && e.message) || "error"); });
 
   function el(tag, cls, text) {
     var n = document.createElement(tag);
@@ -147,8 +181,9 @@
   }
 
   function render() {
-    var app = document.getElementById("app");
-    app.textContent = "";
+    var root = document.getElementById("app");
+    root.textContent = "";
+    if (state.detail) { renderDetail(root); return; }
     var d = state.data;
     var offers = (d && Array.isArray(d.offers)) ? d.offers.filter(function (o) { return o && o.title; }) : [];
     var okSources = (d && d.sources_ok) || [];
@@ -176,7 +211,7 @@
     controls.appendChild(pill("По отзывам", state.sort === "reviews", function () { state.sort = "reviews"; render(); }));
     controls.appendChild(pill("По цене", state.sort === "price", function () { state.sort = "price"; render(); }));
     head.appendChild(controls);
-    app.appendChild(head);
+    root.appendChild(head);
 
     var list = offers.filter(function (o) { return state.source === "all" || o.source === state.source; });
     var best = null, cheapest = null;
@@ -237,25 +272,138 @@
       }
       body.appendChild(el("div", "src", SOURCE_NAMES[o.source] || o.source));
       body.appendChild(el("div", "grow"));
-      var url = safeUrl(o.url);
-      if (url) {
-        var b = el("button", "open", "Открыть на " + (o.source === "yandex_market" ? "Маркете" : (SOURCE_NAMES[o.source] || "сайте")));
-        b.type = "button";
-        b.addEventListener("click", function () { openLink(url); });
-        body.appendChild(b);
-      }
+      var b = el("button", "open", "Подробнее");
+      b.type = "button";
+      body.appendChild(b);
+      card.addEventListener("click", function () { openDetail(o); });
       card.appendChild(body);
       rail.appendChild(card);
     });
-    app.appendChild(rail);
+    root.appendChild(rail);
 
     if (d) {
       var foot = el("div", "foot");
       var now = new Date();
       foot.appendChild(el("span", null, "Цены на " + now.toLocaleDateString("ru-RU", { day: "numeric", month: "long" }) + " · без подписок"));
       if (d.complete === false && okSources.length) foot.appendChild(el("span", null, "Сравнение неполное"));
-      app.appendChild(foot);
+      root.appendChild(foot);
     }
+  }
+
+  function openDetail(o) {
+    var canFetch = o.source === "yandex_market" && o.product_id;
+    state.detail = { offer: o, loading: !!canFetch, data: null, error: false };
+    render();
+    try { window.scrollTo(0, 0); } catch (e) {}
+    log("detail", o.source + ":" + (o.product_id || ""));
+    if (!canFetch) return;
+    var current = state.detail;
+    app.callServerTool({ name: "compare_product_details", arguments: { source: o.source, product_id: String(o.product_id) } })
+      .then(function (res) {
+        if (state.detail !== current) return;
+        var data = res && res.structuredContent;
+        current.loading = false;
+        if (res && res.isError || !data || data.supported === false) { current.error = true; } else { current.data = data; }
+        render();
+      })
+      .catch(function (e) {
+        if (state.detail !== current) return;
+        current.loading = false; current.error = true; render();
+        log("detail_error", (e && e.message) || "error");
+      });
+  }
+
+  function renderDetail(root) {
+    var det = state.detail, o = det.offer, d = det.data || {};
+    var box = el("div", "detail");
+    var back = el("button", "back", "← Ко всем товарам");
+    back.type = "button";
+    back.addEventListener("click", function () { state.detail = null; render(); });
+    box.appendChild(back);
+
+    var top = el("div", "dtop");
+    var pic = el("div", "dpic");
+    var imgUrl = safeUrl(d.image) || safeUrl(o.image);
+    if (imgUrl) {
+      var im = document.createElement("img");
+      im.src = imgUrl; im.alt = ""; im.referrerPolicy = "no-referrer";
+      im.addEventListener("error", function () { pic.replaceChild(placeholderSvg(), im); });
+      pic.appendChild(im);
+    } else { pic.appendChild(placeholderSvg()); }
+    top.appendChild(pic);
+
+    var info = el("div", "dinfo");
+    info.appendChild(el("h2", null, d.title || o.title));
+    var price = d.price_rub != null ? d.price_rub : o.price_rub;
+    if (price != null) {
+      var pr = el("div", "dprice");
+      pr.appendChild(el("span", "now", fmtRub(price)));
+      if (d.price_before_discount_rub && d.price_before_discount_rub > price) pr.appendChild(el("span", "old", fmtRub(d.price_before_discount_rub)));
+      if (d.discount_percent) pr.appendChild(el("span", "off", "−" + d.discount_percent + "%"));
+      info.appendChild(pr);
+    }
+    var plus = d.price_with_plus != null ? d.price_with_plus : o.price_with_subscription_rub;
+    if (plus != null && price != null && plus < price) info.appendChild(el("div", "meta", "с Яндекс Плюсом " + fmtRub(plus)));
+    var rating = d.rating != null ? d.rating : o.rating;
+    var count = d.rating_count != null ? d.rating_count : o.rating_count;
+    if (rating != null) {
+      var r = el("div", "rating");
+      r.appendChild(starSvg());
+      r.appendChild(el("strong", null, Number(rating).toFixed(1).replace(".", ",")));
+      if (count) r.appendChild(el("span", "count", "· " + String(count).replace(/\B(?=(\d{3})+(?!\d))/g, "\u00a0") + " " + reviewsWord(count)));
+      info.appendChild(r);
+    }
+    var stars = d.rating_stars || {};
+    var total = 0; ["1", "2", "3", "4", "5"].forEach(function (k) { total += Number(stars[k] || 0); });
+    if (total > 0) {
+      var bars = el("div", "bars");
+      ["5", "4", "3", "2", "1"].forEach(function (k) {
+        var n = Number(stars[k] || 0);
+        var row = el("div", "bar");
+        row.appendChild(el("span", null, k + "★"));
+        var track = el("div", "track"); var fill = el("div", "fill");
+        fill.style.width = Math.round(n * 100 / total) + "%";
+        track.appendChild(fill); row.appendChild(track);
+        row.appendChild(el("span", null, String(n)));
+        bars.appendChild(row);
+      });
+      info.appendChild(bars);
+    }
+    var metaBits = [];
+    if (d.seller || o.seller) metaBits.push("Продавец: " + (d.seller || o.seller));
+    if (d.offers_count) metaBits.push("предложений: " + d.offers_count);
+    metaBits.push(SOURCE_NAMES[o.source] || o.source);
+    info.appendChild(el("div", "meta", metaBits.join(" · ")));
+    var url = safeUrl(d.url) || safeUrl(o.url);
+    if (url) {
+      var buy = el("button", "buy", "Купить на " + (o.source === "yandex_market" ? "Маркете" : (SOURCE_NAMES[o.source] || "сайте")));
+      buy.type = "button";
+      buy.addEventListener("click", function () { log("buy", o.source + ":" + (o.product_id || "")); openLink(url); });
+      info.appendChild(buy);
+    }
+    top.appendChild(info);
+    box.appendChild(top);
+
+    if (det.loading) box.appendChild(el("div", "meta", "Загружаю описание и отзывы…"));
+    if (det.error) box.appendChild(el("div", "meta", "Подробности сейчас не загрузились — основное выше, остальное на странице товара."));
+    if (d.description) {
+      box.appendChild(el("div", "sec", "Описание"));
+      box.appendChild(el("div", "desc", d.description));
+    }
+    if (Array.isArray(d.reviews) && d.reviews.length) {
+      box.appendChild(el("div", "sec", "Отзывы покупателей"));
+      var list = el("div", "reviews");
+      d.reviews.forEach(function (rv) {
+        var item = el("div", "rev");
+        item.appendChild(el("div", "who", [rv.author, rv.rating ? rv.rating + "★" : "", rv.date].filter(Boolean).join(" · ")));
+        if (rv.pros) item.appendChild(el("div", null, "Плюсы: " + rv.pros));
+        if (rv.cons) item.appendChild(el("div", null, "Минусы: " + rv.cons));
+        if (rv.comment) item.appendChild(el("div", null, rv.comment));
+        list.appendChild(item);
+      });
+      box.appendChild(list);
+    }
+    root.appendChild(box);
   }
 
   function applyContext(ctx) {
@@ -279,7 +427,9 @@
       if (data.result && data.offers === undefined) data = data.result;
       state.data = data;
       if (data.query) state.query = data.query;
+      state.detail = null;
       render();
+      log("rendered", (Array.isArray(data.offers) ? data.offers.length : 0) + " offers");
     }
   }
 
@@ -299,7 +449,10 @@
   }
 
   app.connect().then(function () {
+    connected = true;
     applyContext(app.getHostContext());
+    var hv = app.getHostVersion ? app.getHostVersion() : null;
+    log("connected", hv ? (hv.name + "/" + hv.version) : "");
   }).catch(function (e) {
     if (window.console) console.error("marketplace-cards: connect failed", e);
   });

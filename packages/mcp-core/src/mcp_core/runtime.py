@@ -147,7 +147,7 @@ class BearerAuthMiddleware(Middleware):
             from fastmcp.exceptions import AuthorizationError
 
             raise AuthorizationError("HTTP bearer authentication required")
-        
+
         return await call_next(context)
 
 

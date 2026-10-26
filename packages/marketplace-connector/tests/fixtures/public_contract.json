@@ -502,6 +502,30 @@
       "type": "object"
     }
   },
+  "compare_product_details": {
+    "output": {
+      "type": "object"
+    },
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "product_id": {
+          "maxLength": 32,
+          "minLength": 1,
+          "type": "string"
+        },
+        "source": {
+          "maxLength": 32,
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "product_id"
+      ],
+      "type": "object"
+    }
+  },
   "compare_sources": {
     "output": {
       "type": "object"
@@ -509,6 +533,29 @@
     "parameters": {
       "additionalProperties": false,
       "properties": {},
+      "type": "object"
+    }
+  },
+  "compare_ui_log": {
+    "output": {
+      "type": "object"
+    },
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": "",
+          "maxLength": 200,
+          "type": "string"
+        },
+        "stage": {
+          "maxLength": 40,
+          "type": "string"
+        }
+      },
+      "required": [
+        "stage"
+      ],
       "type": "object"
     }
   },

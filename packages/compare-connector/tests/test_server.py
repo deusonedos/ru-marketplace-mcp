@@ -48,7 +48,14 @@ def test_server_version_matches_pyproject():
 
 async def test_registered_tools_are_stable():
     names = {tool.name for tool in await server.mcp.list_tools()}
-    assert names == {"compare_prices", "compare_sources", "compare_verify_offer", "compare_browser_snapshot"}
+    assert names == {
+        "compare_prices",
+        "compare_sources",
+        "compare_verify_offer",
+        "compare_browser_snapshot",
+        "compare_product_details",
+        "compare_ui_log",
+    }
 
 
 async def test_compare_verify_offer_dispatches_to_source_card(monkeypatch):

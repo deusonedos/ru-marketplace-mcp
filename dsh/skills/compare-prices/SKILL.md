@@ -50,6 +50,9 @@ rank its rows against rouble sources.
   as MCP image content plus metadata for a same-session, unexpired handle. It
   never solves, OCRs, or sends the image to another service. Skip it when the
   client has no image input capability; a missing or foreign handle is `not_found`.
+- `compare_product_details` and `compare_ui_log` — called only by the product
+  cards view shown under `compare_prices` (MCP Apps); hosts hide them from the
+  model. Never call them yourself.
 
 ## Reading the result correctly
 
