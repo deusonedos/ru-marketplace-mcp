@@ -147,12 +147,7 @@ class BearerAuthMiddleware(Middleware):
             from fastmcp.exceptions import AuthorizationError
 
             raise AuthorizationError("HTTP bearer authentication required")
-        if self._tenant_id is not None:
-            supplied_tenant = request.headers.get("x-mcp-tenant", "")
-            if not secrets.compare_digest(supplied_tenant, self._tenant_id):
-                from fastmcp.exceptions import AuthorizationError
-
-                raise AuthorizationError("HTTP tenant identity mismatch")
+        
         return await call_next(context)
 
 
