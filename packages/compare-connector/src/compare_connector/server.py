@@ -53,10 +53,12 @@ import os
 import re
 import time
 from collections.abc import Iterable
+from pathlib import Path
 from typing import Annotated, Any
 from urllib.parse import urlsplit
 
 from fastmcp import Context, FastMCP
+from fastmcp.apps import AppConfig, ResourceCSP
 from fastmcp.exceptions import ToolError
 from fastmcp.tools import ToolResult
 from mcp.types import ImageContent, TextContent, ToolAnnotations
@@ -378,6 +380,26 @@ def _ranks_in_rubles(offer: MarketOffer) -> bool:
     return offer.price_rub is not None and offer.currency == "rub"
 
 
+def _wb_image_url(wb_server: object, nm_id: object) -> str:
+    """Best-effort WB thumbnail URL from the SKU's basket CDN; empty when unknown.
+
+    The basket table lives in wb_connector and can lag for brand-new SKUs, so the
+    cards widget falls back to a placeholder when the image does not load.
+    """
+    basket = getattr(wb_server, "_basket_for_sku", None)
+    try:
+        nm = int(str(nm_id))
+    except (TypeError, ValueError):
+        return ""
+    if nm <= 0 or not callable(basket):
+        return ""
+    try:
+        host = basket(nm)
+    except Exception:
+        return ""
+    return f"https://{host}/vol{nm // 100000}/part{nm // 1000}/{nm}/images/c246x328/1.webp"
+
+
 def _wb_product_url(nm_id: object) -> str:
     return f"https://www.wildberries.ru/catalog/{nm_id}/detail.aspx" if nm_id else ""
 
@@ -510,6 +532,7 @@ async def _search_wildberries(query: str, limit: int) -> list[MarketOffer]:
                 # Preserve that distinction in our nullable stock contract.
                 in_stock=item.in_stock if item.total_quantity is not None else None,
                 url=_wb_product_url(item.nm_id),
+                image=_wb_image_url(server, item.nm_id),
             )
         )
     return OfferBatch(offers, response)
@@ -541,6 +564,7 @@ async def _search_yandex(query: str, limit: int) -> list[MarketOffer]:
                 rating_count=item.rating_count,
                 in_stock=item.in_stock,
                 url=item.url,
+                image=str(getattr(item, "image", "") or ""),
             )
         )
     return OfferBatch(offers, response)
@@ -899,8 +923,27 @@ async def _run_source(name: str, query: str, limit: int) -> tuple[SourceOutcome,
     )
 
 
+CARDS_UI_URI = "ui://compare/cards.html"
+_CARDS_HTML = (Path(__file__).parent / "ui" / "cards.html").read_text(encoding="utf-8")
+
+
+@mcp.resource(
+    CARDS_UI_URI,
+    name="compare_cards",
+    description="Product cards view for compare_prices results (MCP Apps).",
+    app=AppConfig(
+        csp=ResourceCSP(resource_domains=["https://avatars.mds.yandex.net", "https://*.wbbasket.ru"]),
+        prefers_border=False,
+    ),
+)
+def compare_cards_view() -> str:
+    """HTML for the cards view; hosts without MCP Apps support ignore it."""
+    return _CARDS_HTML
+
+
 @mcp.tool(
     name="compare_prices",
+    app=AppConfig(resource_uri=CARDS_UI_URI),
     annotations=ToolAnnotations(
         title="Compare Prices Across Russian Marketplaces",
         readOnlyHint=True,

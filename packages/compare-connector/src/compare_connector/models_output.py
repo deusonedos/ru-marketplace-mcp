@@ -51,6 +51,7 @@ class MarketOffer(BaseModel):
     rating_count: int | None = Field(default=None, description="Number of ratings or reviews behind that average.")
     in_stock: bool | None = Field(default=None, description="Stock status, when the marketplace reports it.")
     url: str = Field(default="", description="Direct product URL.")
+    image: str = Field(default="", description="Primary product image URL, when the marketplace reports one.")
     identity: ProductIdentity = Field(
         default_factory=ProductIdentity,
         description="Manufacturer and variant identity evidence; empty means identity is unknown.",
