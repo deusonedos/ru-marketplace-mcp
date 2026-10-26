@@ -46,6 +46,7 @@ NEVER write to stdout in a stdio MCP server — it corrupts JSON-RPC.
 from __future__ import annotations
 
 import asyncio
+import collections
 import datetime
 import json
 import math
@@ -60,6 +61,7 @@ from urllib.parse import urlsplit
 from fastmcp import Context, FastMCP
 from fastmcp.apps import AppConfig, ResourceCSP
 from fastmcp.exceptions import ToolError
+from fastmcp.server.middleware import Middleware
 from fastmcp.tools import ToolResult
 from mcp.types import ImageContent, TextContent, ToolAnnotations
 from mcp_core import resilience as R
@@ -923,6 +925,43 @@ async def _run_source(name: str, query: str, limit: int) -> tuple[SourceOutcome,
     )
 
 
+class _UiDebugMiddleware(Middleware):
+    """Temporary: remember which MCP calls the host makes, to see whether it loads the cards view.
+
+    Kept in memory (last 40 events, no arguments or headers) and reported under
+    compare_sources ``notes._ui_debug``.
+    """
+
+    async def on_message(self, context, call_next):
+        event: dict[str, Any] = {"t": context.timestamp.strftime("%H:%M:%S"), "m": context.method}
+        message = context.message
+        params = getattr(message, "params", message)
+        if context.method == "initialize":
+            info = getattr(params, "clientInfo", None)
+            caps = getattr(params, "capabilities", None)
+            extras = (getattr(caps, "model_extra", None) or {}) if caps is not None else {}
+            event["client"] = f"{getattr(info, 'name', '?')}/{getattr(info, 'version', '?')}"
+            event["extensions"] = sorted((extras.get("extensions") or {}).keys())
+        uri = getattr(params, "uri", None)
+        if uri is not None:
+            event["uri"] = str(uri)
+        name = getattr(params, "name", None)
+        if isinstance(name, str):
+            event["name"] = name
+        try:
+            result = await call_next(context)
+        except Exception as exc:
+            event["error"] = f"{type(exc).__name__}: {str(exc)[:80]}"
+            _UI_DEBUG.append(event)
+            raise
+        _UI_DEBUG.append(event)
+        return result
+
+
+_UI_DEBUG: collections.deque[dict[str, Any]] = collections.deque(maxlen=40)
+mcp.add_middleware(_UiDebugMiddleware())
+
+
 CARDS_UI_URI = "ui://compare/cards.html"
 _UI_DIR = Path(__file__).parent / "ui"
 # The view talks to the host through the official MCP Apps client, inlined so the
@@ -1421,6 +1460,7 @@ async def compare_sources(ctx: Context | None = None) -> dict[str, Any]:
                 "surfaces as a transport error, and coupon prices are reported as warnings, "
                 "never ranked as plain rubles"
             ),
+            "_ui_debug": list(_UI_DEBUG),
         },
         "source_timeout_s": SOURCE_TIMEOUT_S,
         "server_version": SERVER_VERSION,
