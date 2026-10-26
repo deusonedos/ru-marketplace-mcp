@@ -984,6 +984,11 @@ async def compare_prices(
     the tool for "where is X cheapest" — running the per-marketplace search tools
     one at a time gives the same data far more slowly and without the ranking.
 
+    The user already sees these offers as product cards with each marketplace's
+    own photo, price and link. Do not add image searches or your own product
+    carousels for them: web photos often show a different product. Answer in
+    text — your pick and why.
+
     Two things to read carefully in the output:
 
     - `cheapest` is chosen on everyday prices. Yandex Market's subscriber price
