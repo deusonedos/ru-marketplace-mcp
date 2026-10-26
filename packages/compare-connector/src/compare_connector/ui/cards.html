@@ -88,6 +88,12 @@
   .reviews { display: flex; flex-direction: column; gap: 10px; }
   .rev { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; font-size: 13px; line-height: 1.45; display: flex; flex-direction: column; gap: 4px; }
   .rev .who { color: var(--muted); font-size: 12px; }
+  .rev .lbl { font-weight: 600; }
+  .rev .photos { display: flex; gap: 6px; overflow-x: auto; }
+  .rev .photos img { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); background: var(--img); flex: 0 0 auto; }
+  .rev .helpful { color: var(--muted); font-size: 12px; }
+  .more { align-self: flex-start; height: 38px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font: 500 13px var(--font); cursor: pointer; }
+  .jump { background: none; border: 0; padding: 0; color: var(--text); text-decoration: underline; font: inherit; cursor: pointer; }
   .buy { height: 44px; border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-text); font: 600 14px var(--font); cursor: pointer; padding: 0 18px; align-self: flex-start; }
   @keyframes pulse { 50% { opacity: .55; } }
   @media (prefers-reduced-motion: reduce) { .skel { animation: none; } }
@@ -303,7 +309,7 @@
 
   function openDetail(o) {
     var canFetch = o.source === "yandex_market" && o.product_id;
-    state.detail = { offer: o, loading: !!canFetch, data: null, error: false };
+    state.detail = { offer: o, loading: !!canFetch, data: null, error: false, shown: 3 };
     render();
     try { window.scrollTo(0, 0); } catch (e) {}
     log("detail", o.source + ":" + (o.product_id || ""));
@@ -362,6 +368,13 @@
       r.appendChild(starSvg());
       r.appendChild(el("strong", null, Number(rating).toFixed(1).replace(".", ",")));
       if (count) r.appendChild(el("span", "count", "· " + String(count).replace(/\B(?=(\d{3})+(?!\d))/g, "\u00a0") + " " + reviewsWord(count)));
+      if (Array.isArray(d.reviews) && d.reviews.length) {
+        var jump = el("button", "jump", "читать отзывы");
+        jump.type = "button";
+        jump.addEventListener("click", function () { var t = document.getElementById("reviews"); if (t) t.scrollIntoView({ behavior: "smooth", block: "start" }); });
+        r.appendChild(el("span", "count", " · "));
+        r.appendChild(jump);
+      }
       info.appendChild(r);
     }
     var stars = d.rating_stars || {};
@@ -402,17 +415,50 @@
       box.appendChild(el("div", "desc", d.description));
     }
     if (Array.isArray(d.reviews) && d.reviews.length) {
-      box.appendChild(el("div", "sec", "Отзывы покупателей"));
+      var sec = el("div", "sec", "Отзывы покупателей" + (d.review_count ? " · " + d.review_count : ""));
+      sec.id = "reviews";
+      box.appendChild(sec);
       var list = el("div", "reviews");
-      d.reviews.forEach(function (rv) {
+      d.reviews.slice(0, det.shown).forEach(function (rv) {
         var item = el("div", "rev");
         item.appendChild(el("div", "who", [rv.author, rv.rating ? rv.rating + "★" : "", rv.date].filter(Boolean).join(" · ")));
-        if (rv.pros) item.appendChild(el("div", null, "Плюсы: " + rv.pros));
-        if (rv.cons) item.appendChild(el("div", null, "Минусы: " + rv.cons));
-        if (rv.comment) item.appendChild(el("div", null, rv.comment));
+        [["Плюсы", rv.pros], ["Минусы", rv.cons], ["Комментарий", rv.comment]].forEach(function (pair) {
+          if (!pair[1]) return;
+          var line = el("div");
+          line.appendChild(el("span", "lbl", pair[0] + ": "));
+          line.appendChild(document.createTextNode(pair[1]));
+          item.appendChild(line);
+        });
+        var photos = (rv.photos || []).map(safeUrl).filter(Boolean);
+        if (photos.length) {
+          var strip = el("div", "photos");
+          photos.forEach(function (u) {
+            var pi = document.createElement("img");
+            pi.src = u; pi.alt = "Фото покупателя"; pi.loading = "lazy"; pi.referrerPolicy = "no-referrer";
+            pi.addEventListener("error", function () { if (pi.parentNode) pi.parentNode.removeChild(pi); });
+            strip.appendChild(pi);
+          });
+          item.appendChild(strip);
+        }
+        if (rv.votes_up) item.appendChild(el("div", "helpful", "Полезно: " + rv.votes_up));
         list.appendChild(item);
       });
       box.appendChild(list);
+      if (d.reviews.length > det.shown) {
+        var more = el("button", "more", "Показать ещё отзывы (" + (d.reviews.length - det.shown) + ")");
+        more.type = "button";
+        more.addEventListener("click", function () { det.shown = d.reviews.length; render(); var t = document.getElementById("reviews"); if (t) t.scrollIntoView({ block: "start" }); });
+        box.appendChild(more);
+      }
+      var url2 = safeUrl(d.url) || safeUrl(o.url);
+      if (url2 && d.review_count && d.review_count > d.reviews.length) {
+        var all = el("button", "more", "Все " + d.review_count + " " + reviewsWord(d.review_count) + " на Маркете");
+        all.type = "button";
+        all.addEventListener("click", function () { openLink(url2); });
+        box.appendChild(all);
+      }
+    } else if (!det.loading && det.data) {
+      box.appendChild(el("div", "meta", "Текстовых отзывов у этого товара пока нет."));
     }
     root.appendChild(box);
   }

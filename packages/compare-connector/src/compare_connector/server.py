@@ -1503,15 +1503,17 @@ async def compare_product_details(
         return {"supported": False, "source": source}
     card = await SOURCES["yandex_market"].yandex_card(product_id=product_id, include_reviews=True)
     reviews = []
-    for review in (getattr(card, "reviews", None) or [])[:5]:
+    for review in (getattr(card, "reviews", None) or [])[:13]:
         reviews.append(
             {
                 "author": review.author,
                 "rating": review.rating,
                 "date": review.date,
-                "pros": review.pros[:400],
-                "cons": review.cons[:400],
-                "comment": review.comment[:600],
+                "pros": review.pros[:500],
+                "cons": review.cons[:500],
+                "comment": review.comment[:800],
+                "votes_up": review.votes_up,
+                "photos": [url for url in review.photos[:4] if url.startswith("https://")],
             }
         )
     return {
