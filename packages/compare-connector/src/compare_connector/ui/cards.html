@@ -73,6 +73,7 @@
   </div>
   <div class="rail" id="rail"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>
 </div>
+<!--EXT_APPS_BUNDLE-->
 <script>
 (function () {
   "use strict";
@@ -82,19 +83,7 @@
     aliexpress: "AliExpress", detsky_mir: "Детский мир"
   };
   var state = { data: null, query: "", source: "all", sort: "reviews" };
-  var nextId = 1;
-  var pending = {};
-
-  function send(msg) { window.parent.postMessage(msg, "*"); }
-  function request(method, params) {
-    var id = nextId++;
-    send({ jsonrpc: "2.0", id: id, method: method, params: params || {} });
-    return new Promise(function (resolve, reject) {
-      pending[id] = { resolve: resolve, reject: reject };
-      setTimeout(function () { if (pending[id]) { delete pending[id]; reject(new Error("timeout")); } }, 10000);
-    });
-  }
-  function notify(method, params) { send({ jsonrpc: "2.0", method: method, params: params || {} }); }
+  var app = new window.ExtApps.App({ name: "marketplace-cards", version: "1.1.0" }, { availableDisplayModes: ["inline"] }, { autoResize: true });
 
   function el(tag, cls, text) {
     var n = document.createElement(tag);
@@ -122,7 +111,7 @@
   }
   function openLink(url) {
     if (!url) return;
-    request("ui/open-link", { url: url }).catch(function () {
+    app.openLink({ url: url }).catch(function () {
       try { window.open(url, "_blank", "noopener"); } catch (e) {}
     });
   }
@@ -267,18 +256,7 @@
       if (d.complete === false && okSources.length) foot.appendChild(el("span", null, "Сравнение неполное"));
       app.appendChild(foot);
     }
-    reportSize();
   }
-
-  var lastHeight = 0;
-  function reportSize() {
-    var h = Math.ceil(document.documentElement.getBoundingClientRect().height);
-    if (h && h !== lastHeight) {
-      lastHeight = h;
-      notify("ui/notifications/size-changed", { height: h });
-    }
-  }
-  if (window.ResizeObserver) new ResizeObserver(reportSize).observe(document.body);
 
   function applyContext(ctx) {
     if (!ctx) return;
@@ -305,40 +283,25 @@
     }
   }
 
-  window.addEventListener("message", function (ev) {
-    var m = ev.data;
-    if (!m || m.jsonrpc !== "2.0") return;
-    if (m.id != null && pending[m.id] && (m.result !== undefined || m.error !== undefined)) {
-      var p = pending[m.id]; delete pending[m.id];
-      if (m.error) p.reject(m.error); else p.resolve(m.result);
-      return;
+  app.ontoolinput = function (params) {
+    var args = params && params.arguments;
+    if (args && args.query) {
+      state.query = String(args.query);
+      var h = document.getElementById("heading");
+      if (h) h.textContent = "Ищу «" + state.query + "»…";
     }
-    if (m.method === "ui/notifications/tool-input") {
-      var args = m.params && m.params.arguments;
-      if (args && args.query) { state.query = String(args.query); document.getElementById("heading").textContent = "Ищу «" + state.query + "»…"; reportSize(); }
-    } else if (m.method === "ui/notifications/tool-result") {
-      takeResult(m.params);
-    } else if (m.method === "ui/notifications/host-context-changed") {
-      applyContext(m.params);
-    } else if (m.method === "ping" && m.id != null) {
-      send({ jsonrpc: "2.0", id: m.id, result: {} });
-    }
-  });
+  };
+  app.ontoolresult = function (result) { takeResult(result); };
+  app.onhostcontextchanged = function (ctx) { applyContext(ctx); };
 
   if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
     document.documentElement.setAttribute("data-theme", "dark");
   }
 
-  request("ui/initialize", {
-    appInfo: { name: "marketplace-cards", version: "1.0.0" },
-    appCapabilities: { availableDisplayModes: ["inline"] },
-    protocolVersion: "2026-01-26"
-  }).then(function (res) {
-    applyContext(res && res.hostContext);
-    notify("ui/notifications/initialized", {});
-    reportSize();
-  }).catch(function () {
-    notify("ui/notifications/initialized", {});
+  app.connect().then(function () {
+    applyContext(app.getHostContext());
+  }).catch(function (e) {
+    if (window.console) console.error("marketplace-cards: connect failed", e);
   });
 })();
 </script>

@@ -924,7 +924,17 @@ async def _run_source(name: str, query: str, limit: int) -> tuple[SourceOutcome,
 
 
 CARDS_UI_URI = "ui://compare/cards.html"
-_CARDS_HTML = (Path(__file__).parent / "ui" / "cards.html").read_text(encoding="utf-8")
+_UI_DIR = Path(__file__).parent / "ui"
+# The view talks to the host through the official MCP Apps client, inlined so the
+# sandboxed frame needs no script CDN in its CSP.
+_CARDS_HTML = (
+    (_UI_DIR / "cards.html")
+    .read_text(encoding="utf-8")
+    .replace(
+        "<!--EXT_APPS_BUNDLE-->",
+        "<script>" + (_UI_DIR / "ext-apps-app.js").read_text(encoding="utf-8") + "</script>",
+    )
+)
 
 
 @mcp.resource(
@@ -944,6 +954,8 @@ def compare_cards_view() -> str:
 @mcp.tool(
     name="compare_prices",
     app=AppConfig(resource_uri=CARDS_UI_URI),
+    # Legacy flat key, still written by the official SDK for older hosts.
+    meta={"ui/resourceUri": CARDS_UI_URI},
     annotations=ToolAnnotations(
         title="Compare Prices Across Russian Marketplaces",
         readOnlyHint=True,
@@ -986,8 +998,8 @@ async def compare_prices(
 
     The user already sees these offers as product cards with each marketplace's
     own photo, price and link. Do not add image searches or your own product
-    carousels for them: web photos often show a different product. Answer in
-    text — your pick and why.
+    carousels for them (web photos often show a different product), and do not
+    comment on photos. Answer in text: your pick and why.
 
     Two things to read carefully in the output:
 
